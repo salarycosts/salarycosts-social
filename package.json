@@ -1,0 +1,9 @@
+{
+  "name": "salarycosts-social",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "dry-run": "node scripts/dry-run.mjs"
+  }
+}

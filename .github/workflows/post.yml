@@ -1,0 +1,72 @@
+name: post to Instagram
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # checks every 30 minutes whether a posting slot is due (times are set in schedule.json)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Post the next one right now (ignores the schedule)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Dry run: show what would be posted, post nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # moves posted folders and writes the log
+  issues: write     # opens an issue (you get an email) when the queue is low or finished
+
+concurrency:
+  group: post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Check the Instagram token
+        run: node scripts/check-token.mjs
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          FB_APP_ID: ${{ secrets.FB_APP_ID }}
+          FB_APP_SECRET: ${{ secrets.FB_APP_SECRET }}
+
+      - name: Post the next carousel if a slot is due
+        run: node scripts/publish.mjs
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+          FORCE: ${{ inputs.force }}
+          DRY_RUN: ${{ inputs.dry_run }}
+
+      - name: Save the log and moved folders
+        if: always()
+        run: |
+          git config user.name "salarycosts-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A queue posted posted.json
+          if ! git diff --cached --quiet; then
+            git commit -m "posted: update queue and log"
+            git pull --rebase
+            git push
+          fi
+
+      - name: Tell me when the queue is low or finished
+        if: always()
+        run: |
+          if [ -f notify.md ]; then
+            gh issue create --title "$(head -n 1 notify.md)" --body "$(tail -n +2 notify.md)"
+            rm notify.md
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
