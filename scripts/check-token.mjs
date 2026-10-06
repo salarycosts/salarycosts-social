@@ -7,6 +7,16 @@ try {
   const r = await fetch(`https://${HOST}/${V}/${id}?fields=username&access_token=${encodeURIComponent(token)}`), j = await r.json();
   if (!r.ok || j.error) throw new Error(j.error?.message ?? `HTTP ${r.status}`);
   console.log(`Token works for @${j.username}.`);
+  // token age: the file token-created.txt holds the date (YYYY-MM-DD) you pasted the current token; App Dashboard tokens last 60 days
+  try {
+    const { readFileSync } = await import('node:fs');
+    const created = Date.parse(readFileSync(new URL('../token-created.txt', import.meta.url), 'utf8').trim());
+    if (Number.isFinite(created)) {
+      const left = 60 - Math.floor((Date.now() - created) / 86400000);
+      console.log(`Token is about ${60 - left} day(s) old (${left} day(s) of its 60 left).`);
+      if (left < 10) { console.error(`ERROR: the Instagram token expires in about ${Math.max(left, 0)} day(s). Create a new token, update the IG_ACCESS_TOKEN secret and the date in token-created.txt (README.md).`); process.exit(1); }
+    }
+  } catch { /* no date file: skip the age check */ }
   if (app && secret) {
     const d = await (await fetch(`https://${HOST}/${V}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(`${app}|${secret}`)}`)).json();
     const exp = d.data?.data_access_expires_at || d.data?.expires_at;

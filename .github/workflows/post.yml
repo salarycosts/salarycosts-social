@@ -35,6 +35,7 @@ jobs:
       - name: Check the Instagram token
         run: node scripts/check-token.mjs
         env:
+          IG_API_HOST: graph.instagram.com
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           FB_APP_ID: ${{ secrets.FB_APP_ID }}
@@ -43,6 +44,7 @@ jobs:
       - name: Post the next carousel if a slot is due
         run: node scripts/publish.mjs
         env:
+          IG_API_HOST: graph.instagram.com
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           BRANCH: ${{ github.ref_name }}

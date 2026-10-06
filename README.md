@@ -32,13 +32,14 @@ queue/001-shocking-tax-facts/
 - **When the whole queue is published:** one issue/email "All posts are published". Nothing else, never after each post.
 - **Only if something breaks** (for example the Instagram token expired): GitHub emails you that a run failed. Fix it, and it stops. This is rare and important, so keep it on.
 
-## Refresh the token (about every 60 days, or never with a System User token)
-The robot warns you by failing a run ~10 days before it expires if `FB_APP_ID` and `FB_APP_SECRET` secrets are set. To refresh: create a new long-lived token in the Meta developer app and paste it into the repo secret `IG_ACCESS_TOKEN` (Settings -> Secrets and variables -> Actions).
+## Refresh the token (every ~50 days)
+A token made in the Meta App Dashboard lasts **60 days**. The robot checks it before every run and **fails a run (GitHub emails you) when about 10 days are left**, using the date in `token-created.txt`.
+To refresh: Meta App Dashboard -> Instagram -> **API setup with Instagram login** -> **Generate token** for your account -> copy it -> GitHub repo -> Settings -> Secrets and variables -> Actions -> `IG_ACCESS_TOKEN` -> Update. Then edit `token-created.txt` to today's date (YYYY-MM-DD). Never paste the token anywhere else.
 
 ## One-time setup (Claude guides you through each click)
 1. Instagram account type: **Business** or **Creator** (Instagram -> Settings -> Account type and tools).
-2. Create a Facebook **Page** and link it to the Instagram account.
-3. developers.facebook.com -> **Create app** (type Business) -> add the **Instagram** product -> generate an access token with `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `pages_read_engagement`; note your **Instagram user id**.
+2. A Facebook Page is only needed if Meta asks for it during step 3 (try without it first).
+3. developers.facebook.com -> **Create app** (type **Business**) -> add the **Instagram** product -> **API setup with Instagram login** -> add your Instagram account -> **Generate token** (permissions `instagram_business_basic` and `instagram_business_content_publish`); note your **Instagram account ID** shown there.
 4. GitHub: create a **public** repo `salarycosts-social`, upload this folder, then Settings -> Secrets and variables -> Actions -> add `IG_USER_ID` and `IG_ACCESS_TOKEN` (optional: `FB_APP_ID`, `FB_APP_SECRET`).
 5. Settings -> Actions -> General -> Workflow permissions: **Read and write**.
 6. Run a **dry run**, then **force** one real post as a test, then leave the schedule on.
