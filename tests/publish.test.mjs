@@ -9,7 +9,7 @@ import { makeRoot, addPost } from './helpers.mjs';
 function fakeInstagram({ failOn } = {}) {
   const calls = []; let n = 0;
   const fetchFn = async (url, init = {}) => {
-    const u = new URL(url), body = init.body ? Object.fromEntries(init.body) : Object.fromEntries(u.searchParams), path = u.pathname.replace(/^\/v[\d.]+\//, '');
+    const u = new URL(url), body = init.body ? Object.fromEntries(init.body) : Object.fromEntries(u.searchParams), path = u.pathname.replace(/^\/(v[\d.]+\/)?/, '');
     calls.push({ method: init.method ?? 'GET', path, body });
     if (failOn && path.includes(failOn)) return { ok: false, status: 400, json: async () => ({ error: { message: 'boom', code: 100 } }) };
     if (path.endsWith('/media_publish')) return { ok: true, status: 200, json: async () => ({ id: 'MEDIA1' }) };
@@ -84,4 +84,22 @@ test('four slots a day: each slot posts exactly one folder, in order, never twic
   for (const t of ['06:05', '06:35', '10:35', '11:05', '15:35', '15:40', '18:35', '19:50']) out.push((await go(root, at(t), ig)).folder ?? null);
   assert.deepEqual(out, ['001-p', null, '002-p', null, '003-p', null, '004-p', null]);
   assert.equal((await go(root, at('20:00'), ig)).folder ?? null, null); // 22:00 local, no slot due
+});
+
+test('temporary Instagram errors are retried; a permanent error is not retried and is reported with details', async () => {
+  const root = makeRoot(); addPost(root, '01-a', { slides: 2 });
+  let fails = 2; const calls = [];
+  const flaky = async (url, init = {}) => {
+    const path = new URL(url).pathname.replace(/^\/(v[\d.]+\/)?/, ''); calls.push(path);
+    if (path.endsWith('/media') && fails-- > 0) return { ok: false, status: 500, json: async () => ({ error: { message: 'An unexpected error has occurred.', code: 2 } }) };
+    if (path.endsWith('/media_publish')) return { ok: true, status: 200, json: async () => ({ id: 'M' }) };
+    if (path.endsWith('/media')) return { ok: true, status: 200, json: async () => ({ id: 'C' }) };
+    return { ok: true, status: 200, json: async () => ({ status_code: 'FINISHED' }) };
+  };
+  const r = await runOnce({ root, env: ENV, now: NOON, fetchFn: flaky, log, sleepFn: async () => {} });
+  assert.equal(r.posted, true); assert.ok(calls.filter((c) => c.endsWith('/media')).length >= 5); // 2 failed tries + 2 slides + carousel
+  const root2 = makeRoot(); addPost(root2, '01-a');
+  let n = 0; const denied = async () => { n++; return { ok: false, status: 400, json: async () => ({ error: { message: 'Permissions error', code: 10, error_subcode: 77, fbtrace_id: 'ABC' } }) }; };
+  await assert.rejects(() => runOnce({ root: root2, env: ENV, now: NOON, fetchFn: denied, log, sleepFn: async () => {} }), /Permissions error \[code 10\].*subcode 77.*trace ABC/);
+  assert.equal(n, 1, 'permission errors are not retried');
 });

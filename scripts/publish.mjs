@@ -6,22 +6,28 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateSchedule, dueSlot, nextSlots, listQueue, inspectPost } from './lib.mjs';
 
-const HOST = process.env.IG_API_HOST || 'graph.facebook.com', VERSION = process.env.GRAPH_VERSION || 'v21.0';
+const HOST = process.env.IG_API_HOST || 'graph.facebook.com', VERSION = process.env.GRAPH_VERSION ?? ''; // empty = no version in the URL, Instagram then uses the app's current default version
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const readJson = (f, fallback) => (existsSync(f) ? JSON.parse(readFileSync(f, 'utf8') || 'null') ?? fallback : fallback);
 const when = (ms, tz) => new Date(ms).toLocaleString('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' });
 
-// one Graph API call; the access token is added here and never printed
-async function graph(fetchFn, path, { method = 'GET', params = {}, token }) {
-  const url = new URL(`https://${HOST}/${VERSION}/${path}`), body = new URLSearchParams({ ...params, access_token: token });
-  const res = method === 'GET' ? await fetchFn(`${url}?${body}`) : await fetchFn(url, { method, body });
-  let json = {}; try { json = await res.json(); } catch { /* keep empty */ }
-  if (!res.ok || json.error) throw new Error(`Instagram API ${path.replace(/\d{6,}/g, '<id>')} failed (${res.status}): ${json.error?.message ?? 'unknown error'}${json.error?.code ? ` [code ${json.error.code}]` : ''}`);
-  return json;
+// one Graph API call; the access token is added here and never printed. Temporary Instagram errors (5xx, codes 1, 2, 4, 17, 341) are retried.
+const TEMPORARY = new Set([1, 2, 4, 17, 341]);
+async function graph(fetchFn, path, { method = 'GET', params = {}, token, sleepFn = sleep, delays = [4000, 12000, 30000] }) {
+  const base = `https://${HOST}/${VERSION ? `${VERSION}/` : ''}${path}`, body = new URLSearchParams({ ...params, access_token: token });
+  for (let attempt = 0; ; attempt++) {
+    const res = method === 'GET' ? await fetchFn(`${base}?${body}`) : await fetchFn(base, { method, body });
+    let json = {}; try { json = await res.json(); } catch { /* keep empty */ }
+    if (res.ok && !json.error) return json;
+    const e = json.error ?? {}, temporary = res.status >= 500 || TEMPORARY.has(e.code);
+    if (temporary && attempt < delays.length) { await sleepFn(delays[attempt]); continue; }
+    const detail = [e.type, e.error_subcode && `subcode ${e.error_subcode}`, e.error_user_title, e.error_user_msg, e.fbtrace_id && `trace ${e.fbtrace_id}`].filter(Boolean).join(' | ');
+    throw new Error(`Instagram API ${path.replace(/\d{6,}/g, '<id>')} failed (${res.status}): ${e.message ?? 'unknown error'}${e.code ? ` [code ${e.code}]` : ''}${detail ? ` (${detail})` : ''}${temporary ? ' after retries' : ''}`);
+  }
 }
 async function waitFinished(fetchFn, id, token, { tries = 40, delay = 3000, sleepFn = sleep } = {}) {
   for (let i = 0; i < tries; i++) {
-    const { status_code: s, status } = await graph(fetchFn, id, { params: { fields: 'status_code,status' }, token });
+    const { status_code: s, status } = await graph(fetchFn, id, { params: { fields: 'status_code,status' }, token, sleepFn });
     if (s === 'FINISHED') return;
     if (s === 'ERROR' || s === 'EXPIRED') throw new Error(`Instagram could not process an image (${s}${status ? `: ${status}` : ''}).`);
     await sleepFn(delay);
@@ -64,13 +70,13 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
 
   const children = [];
   for (const f of post.slides) {
-    const { id } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { image_url: urlOf(f), is_carousel_item: 'true' }, token });
+    const { id } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { image_url: urlOf(f), is_carousel_item: 'true' }, token, sleepFn });
     children.push(id);
   }
   for (const id of children) await waitFinished(fetchFn, id, token, { sleepFn });
-  const { id: container } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: children.join(','), caption: post.caption }, token });
+  const { id: container } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: children.join(','), caption: post.caption }, token, sleepFn });
   await waitFinished(fetchFn, container, token, { sleepFn });
-  const { id: mediaId } = await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token });
+  const { id: mediaId } = await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token, sleepFn });
 
   // only after Instagram confirmed: move the folder and write the log
   mkdirSync(join(root, 'posted'), { recursive: true });
