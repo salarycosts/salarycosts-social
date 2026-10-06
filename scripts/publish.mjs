@@ -1,5 +1,5 @@
 // Posts the next carousel from queue/ to Instagram (official Graph API) when a schedule slot is due.
-// Env: IG_USER_ID, IG_ACCESS_TOKEN (secrets) | GITHUB_REPOSITORY, BRANCH (for the public image URLs) | DRY_RUN=1, FORCE=1
+// Env: IG_ACCESS_TOKEN (secret), IG_USER_ID (optional, defaults to "me") | GITHUB_REPOSITORY, BRANCH (for the public image URLs) | DRY_RUN=1, FORCE=1
 // Run: node scripts/publish.mjs            (the GitHub Action does this every 30 minutes)
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, appendFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -57,8 +57,8 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
   post.warnings.forEach((w) => log(`  warning: ${w}`));
   if (dry) { result.would = post.name; return result; }
 
-  const token = env.IG_ACCESS_TOKEN, igId = env.IG_USER_ID, repo = env.GITHUB_REPOSITORY, branch = env.BRANCH || 'main';
-  if (!token || !igId) throw new Error('IG_ACCESS_TOKEN and IG_USER_ID must be set as repository secrets.');
+  const token = env.IG_ACCESS_TOKEN, igId = env.IG_USER_ID || 'me', repo = env.GITHUB_REPOSITORY, branch = env.BRANCH || 'main';
+  if (!token) throw new Error('IG_ACCESS_TOKEN must be set as a repository secret (see README.md). IG_USER_ID is optional; "me" is used when it is not set.');
   if (!repo) throw new Error('GITHUB_REPOSITORY is not set (it is set automatically inside GitHub Actions).');
   const urlOf = (f) => `https://raw.githubusercontent.com/${repo}/${branch}/queue/${encodeURIComponent(post.name)}/${encodeURIComponent(f)}`;
 

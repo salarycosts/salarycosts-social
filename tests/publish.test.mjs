@@ -69,9 +69,11 @@ test('exactly ONE notice: only when the last post has gone out; an empty queue a
   const next = await go(root, Date.parse('2026-10-07T10:35:00Z'), ig);   // next day, queue empty
   assert.equal(next.posted, false); assert.deepEqual(next.problems, []);  // exit code stays 0, so GitHub sends nothing
 });
-test('missing secrets fail with a clear message', async () => {
+test('missing token fails with a clear message; the user id is optional and defaults to "me"', async () => {
   const root = makeRoot(); addPost(root, '01-a');
-  await assert.rejects(() => go(root, NOON, fakeInstagram(), {}), /IG_ACCESS_TOKEN and IG_USER_ID/);
+  await assert.rejects(() => go(root, NOON, fakeInstagram(), { GITHUB_REPOSITORY: 'me/x' }), /IG_ACCESS_TOKEN must be set/);
+  const ig = fakeInstagram(); await go(root, NOON, ig, { IG_ACCESS_TOKEN: 'T', GITHUB_REPOSITORY: 'me/x' });
+  assert.ok(ig.calls[0].path.startsWith('me/media'));
 });
 
 test('four slots a day: each slot posts exactly one folder, in order, never twice', async () => {

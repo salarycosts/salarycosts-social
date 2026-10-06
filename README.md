@@ -39,8 +39,8 @@ To refresh: Meta App Dashboard -> Instagram -> **API setup with Instagram login*
 ## One-time setup (Claude guides you through each click)
 1. Instagram account type: **Business** or **Creator** (Instagram -> Settings -> Account type and tools).
 2. A Facebook Page is only needed if Meta asks for it during step 3 (try without it first).
-3. developers.facebook.com -> **Create app** (type **Business**) -> add the **Instagram** product -> **API setup with Instagram login** -> add your Instagram account -> **Generate token** (permissions `instagram_business_basic` and `instagram_business_content_publish`); note your **Instagram account ID** shown there.
-4. GitHub: create a **public** repo `salarycosts-social`, upload this folder, then Settings -> Secrets and variables -> Actions -> add `IG_USER_ID` and `IG_ACCESS_TOKEN` (optional: `FB_APP_ID`, `FB_APP_SECRET`).
+3. developers.facebook.com -> **Create app** (type **Business**) -> add the **Instagram** product -> **API setup with Instagram login** -> add your Instagram account -> **Generate token** (permissions `instagram_business_basic` and `instagram_business_content_publish`); 
+4. GitHub: create a **public** repo `salarycosts-social`, upload this folder, then Settings -> Secrets and variables -> Actions -> add `IG_ACCESS_TOKEN` (that is the only secret needed).
 5. Settings -> Actions -> General -> Workflow permissions: **Read and write**.
 6. Run a **dry run**, then **force** one real post as a test, then leave the schedule on.
 
