@@ -73,3 +73,13 @@ test('missing secrets fail with a clear message', async () => {
   const root = makeRoot(); addPost(root, '01-a');
   await assert.rejects(() => go(root, NOON, fakeInstagram(), {}), /IG_ACCESS_TOKEN and IG_USER_ID/);
 });
+
+test('four slots a day: each slot posts exactly one folder, in order, never twice', async () => {
+  const root = makeRoot({ timezone: 'Europe/Berlin', slots: ['08:00', '12:30', '17:30', '20:30'] });
+  for (let i = 1; i <= 6; i++) addPost(root, `00${i}-p`);
+  const ig = fakeInstagram(), day = '2026-10-06', at = (hhmm) => Date.parse(`${day}T${hhmm}:00Z`); // Berlin = UTC+2: 08:05 local is 06:05Z
+  const out = [];
+  for (const t of ['06:05', '06:35', '10:35', '11:05', '15:35', '15:40', '18:35', '19:50']) out.push((await go(root, at(t), ig)).folder ?? null);
+  assert.deepEqual(out, ['001-p', null, '002-p', null, '003-p', null, '004-p', null]);
+  assert.equal((await go(root, at('20:00'), ig)).folder ?? null, null); // 22:00 local, no slot due
+});

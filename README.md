@@ -21,7 +21,7 @@ queue/001-shocking-tax-facts/
 | I want to... | Do this |
 |---|---|
 | **Add posts** | On github.com open the repo, `queue/`, **Add file -> Upload files**, drag the new numbered folders in, **Commit**. (Or let Claude run `node social/export-queue.mjs`, then upload.) |
-| **Change the times** | Edit `schedule.json`: `"timezone": "Europe/Berlin", "slots": ["12:30", "19:30"]`. A slot can also be `"Mon 19:30"` for one weekday. |
+| **Change the times** | Edit `schedule.json`: `"timezone": "Europe/Berlin", "slots": ["08:00", "12:30", "17:30", "20:30"]`. A slot can also be `"Mon 19:30"` for one weekday. |
 | **See what will go out next** | `Actions` tab -> **post to Instagram** -> **Run workflow** -> tick **dry run** -> it prints the next post, slide order and caption and posts nothing. |
 | **Post the next one right now** | Same button, tick **force**. |
 | **Pause everything** | `Actions` tab -> **post to Instagram** -> **... -> Disable workflow**. Enable it again to resume. |
