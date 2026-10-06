@@ -47,8 +47,8 @@ export function slotInstants(schedule, fromMs, toMs) {
   }
   return [...new Set(out)].sort((a, b) => a - b);
 }
-// the slot that is due now: a slot in the last `graceMs` that has not been used by a post yet
-export function dueSlot(schedule, nowMs, lastPostedMs = 0, graceMs = 3 * 3600000) {
+// the slot that is due now: a slot in the last `graceMinutes` (default 90, so a delayed run is still on time) not yet used by a post
+export function dueSlot(schedule, nowMs, lastPostedMs = 0, graceMs = (schedule.graceMinutes ?? 90) * 60000) {
   const slots = slotInstants(schedule, nowMs - graceMs, nowMs);
   const s = slots[slots.length - 1];
   return s !== undefined && lastPostedMs < s ? s : null;

@@ -22,13 +22,13 @@ test('time zones: Berlin winter (UTC+1) and summer (UTC+2), the daylight-saving 
   assert.equal(new Date(zonedToUtc(2026, 3, 8, 12, 0, 'Asia/Karachi')).toISOString(), '2026-03-08T07:00:00.000Z');
   assert.equal(localParts(new Date('2026-10-05T23:30:00Z'), BER).dow, 2); // 01:30 Tuesday in Berlin
 });
-test('two daily slots: due inside the 3 hour window, used up once a post went out, nothing outside', () => {
+test('two daily slots: due inside the 90 minute window, used up once a post went out, nothing outside', () => {
   const sch = { timezone: BER, slots: ['12:30', '19:30'] };
   const t = (iso) => Date.parse(iso); // October: Berlin is UTC+2
   const noon = t('2026-10-06T10:30:00Z'), evening = t('2026-10-06T17:30:00Z');
   assert.equal(dueSlot(sch, noon + 10 * 60000, 0), noon);                       // 12:40 local: first slot due
   assert.equal(dueSlot(sch, noon + 10 * 60000, noon + 5 * 60000), null);       // already posted for this slot
-  assert.equal(dueSlot(sch, noon + 4 * 3600000, 0), null);                      // 16:30 local: first slot too old (3 h), evening not yet
+  assert.equal(dueSlot(sch, noon + 4 * 3600000, 0), null);                      // 16:30 local: first slot too old, evening not yet
   assert.equal(dueSlot(sch, evening + 25 * 60000, noon + 60000), evening);     // 19:55: evening slot due after the lunchtime post
   assert.equal(dueSlot(sch, evening + 25 * 60000, evening + 60000), null);
 });
@@ -57,4 +57,17 @@ test('validation: good post passes; each kind of mistake is reported', () => {
   const bad = addPost(root, 'notjpg', { slides: 2 }); writeFileSync(join(bad, 'slide-02.jpg'), 'not an image'); assert.match(inspectPost(q, 'notjpg').errors.join(), /not a readable JPEG/);
   const mixed = addPost(root, 'mixed', { slides: 2 }); writeFileSync(join(mixed, 'slide-02.jpg'), jpeg(1080, 1080)); assert.ok(inspectPost(q, 'mixed').warnings.some((w) => /different size/.test(w)));
   assert.deepEqual(jpegSize(jpeg(1080, 1350)), { w: 1080, h: 1350 });
+});
+
+test('six slots a day: each is due for 90 minutes after its time, a post uses up its own slot only', () => {
+  const sch = { timezone: BER, slots: ['07:30', '10:30', '12:45', '15:30', '18:30', '20:30'], graceMinutes: 90 };
+  const z = (hhmm) => Date.parse(`2026-10-06T${hhmm}:00Z`); // Berlin = UTC+2, so 07:30 local is 05:30Z
+  assert.equal(slotInstants(sch, z('00:00'), z('23:59')).length, 6);
+  assert.equal(dueSlot(sch, z('05:40'), 0), z('05:30'));               // 07:40 local: first slot is due
+  assert.equal(dueSlot(sch, z('05:40'), z('05:31')), null);            // it already has its post
+  assert.equal(dueSlot(sch, z('07:00'), z('05:31')), null);            // 09:00 local: first slot is 90 min old and used; second not yet
+  assert.equal(dueSlot(sch, z('08:40'), z('05:31')), z('08:30'));      // 10:40 local: second slot due
+  assert.equal(dueSlot(sch, z('10:20'), z('08:31')), null);            // 12:20 local: nothing due (12:45 not yet, 10:30 used)
+  assert.equal(dueSlot(sch, z('11:00'), z('08:31')), z('10:45'));      // 13:00 local: third slot due
+  assert.equal(dueSlot(sch, z('12:30'), z('10:46')), null);            // 14:30 local: third slot is 105 min old, too late; 15:30 not yet
 });
