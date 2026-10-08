@@ -13,8 +13,8 @@ try {
     const { readFileSync } = await import('node:fs');
     const created = Date.parse(readFileSync(new URL('../token-created.txt', import.meta.url), 'utf8').trim());
     if (Number.isFinite(created)) {
-      const left = 60 - Math.floor((Date.now() - created) / 86400000);
-      console.log(`Token is about ${60 - left} day(s) old (${left} day(s) of its 60 left).`);
+      const age = Math.max(0, Math.floor((Date.now() - created) / 86400000)), left = 60 - age;
+      console.log(`Token is about ${age} day(s) old (${left} day(s) of its 60 left).`);
       if (left < 10) { console.error(`ERROR: the Instagram token expires in about ${Math.max(left, 0)} day(s). Create a new token, update the IG_ACCESS_TOKEN secret and the date in token-created.txt (README.md).`); process.exit(1); }
     }
   } catch { /* no date file: skip the age check */ }

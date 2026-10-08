@@ -12,14 +12,14 @@ const readJson = (f, fallback) => (existsSync(f) ? JSON.parse(readFileSync(f, 'u
 const when = (ms, tz) => new Date(ms).toLocaleString('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' });
 
 // one Graph API call; the access token is added here and never printed. Temporary Instagram errors (5xx, codes 1, 2, 4, 17, 341) are retried.
-const TEMPORARY = new Set([1, 2, 4, 17, 341]);
-export async function graph(fetchFn, path, { method = 'GET', params = {}, token, sleepFn = sleep, delays = [4000, 12000, 30000] }) {
+const TEMPORARY = new Set([1, 2, 4, 17, 341, 9007]); // 9007 / subcode 2207027: "media is not ready for publishing, please wait"
+export async function graph(fetchFn, path, { method = 'GET', params = {}, token, sleepFn = sleep, delays = [5000, 15000, 30000, 60000] }) {
   const base = `https://${HOST}/${VERSION ? `${VERSION}/` : ''}${path}`, body = new URLSearchParams({ ...params, access_token: token });
   for (let attempt = 0; ; attempt++) {
     const res = method === 'GET' ? await fetchFn(`${base}?${body}`) : await fetchFn(base, { method, body });
     let json = {}; try { json = await res.json(); } catch { /* keep empty */ }
     if (res.ok && !json.error) return json;
-    const e = json.error ?? {}, temporary = res.status >= 500 || TEMPORARY.has(e.code);
+    const e = json.error ?? {}, temporary = res.status >= 500 || TEMPORARY.has(e.code) || e.error_subcode === 2207027;
     if (temporary && attempt < delays.length) { await sleepFn(delays[attempt]); continue; }
     const detail = [e.type, e.error_subcode && `subcode ${e.error_subcode}`, e.error_user_title, e.error_user_msg, e.fbtrace_id && `trace ${e.fbtrace_id}`].filter(Boolean).join(' | ');
     throw new Error(`Instagram API ${path.replace(/\d{6,}/g, '<id>')} failed (${res.status}): ${e.message ?? 'unknown error'}${e.code ? ` [code ${e.code}]` : ''}${detail ? ` (${detail})` : ''}${temporary ? ' after retries' : ''}`);
@@ -76,6 +76,7 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
   for (const id of children) await waitFinished(fetchFn, id, token, { sleepFn });
   const { id: container } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: children.join(','), caption: post.caption }, token, sleepFn });
   await waitFinished(fetchFn, container, token, { sleepFn });
+  await sleepFn(5000); // Instagram can still say "not ready" right after FINISHED; the publish call is also retried
   const { id: mediaId } = await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token, sleepFn });
 
   // only after Instagram confirmed: move the folder and write the log

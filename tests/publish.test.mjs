@@ -103,3 +103,14 @@ test('temporary Instagram errors are retried; a permanent error is not retried a
   await assert.rejects(() => runOnce({ root: root2, env: ENV, now: NOON, fetchFn: denied, log, sleepFn: async () => {} }), /Permissions error \[code 10\].*subcode 77.*trace ABC/);
   assert.equal(n, 1, 'permission errors are not retried');
 });
+
+test('retries "media is not ready for publishing" (code 9007) and then publishes', async () => {
+  const root = makeRoot(); addPost(root, '01-first', { slides: 2 });
+  const ig = fakeInstagram(); let tries = 0;
+  const fetchFn = async (url, init) => {
+    if (new URL(url).pathname.endsWith('/media_publish') && tries++ < 2) return { ok: false, status: 400, json: async () => ({ error: { message: 'Media ID is not available', code: 9007, error_subcode: 2207027 } }) };
+    return ig.fetchFn(url, init);
+  };
+  const r = await runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} });
+  assert.equal(r.posted, true); assert.equal(tries, 3);
+});
