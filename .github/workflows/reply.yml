@@ -39,7 +39,7 @@ jobs:
         run: |
           git config user.name "salarycosts-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add replies.json
+          if [ -f replies.json ]; then git add replies.json; fi
           if ! git diff --cached --quiet; then
             git commit -m "replies: update log"
             git pull --rebase
