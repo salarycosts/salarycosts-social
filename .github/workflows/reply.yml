@@ -1,0 +1,47 @@
+name: reply to comments
+
+on:
+  # schedule:                 # switched on after the token with the comment permission is in place (see README.md)
+  #   - cron: '10,40 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: show which comments would be answered, reply to nothing'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # saves replies.json (which comments were answered)
+
+concurrency:
+  group: reply
+  cancel-in-progress: false
+
+jobs:
+  reply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Reply to new comments
+        run: node scripts/reply.mjs
+        env:
+          IG_API_HOST: graph.instagram.com
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+
+      - name: Save which comments were answered
+        if: always()
+        run: |
+          git config user.name "salarycosts-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add replies.json
+          if ! git diff --cached --quiet; then
+            git commit -m "replies: update log"
+            git pull --rebase
+            git push
+          fi

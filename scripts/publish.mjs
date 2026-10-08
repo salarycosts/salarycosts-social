@@ -13,7 +13,7 @@ const when = (ms, tz) => new Date(ms).toLocaleString('en-GB', { timeZone: tz, da
 
 // one Graph API call; the access token is added here and never printed. Temporary Instagram errors (5xx, codes 1, 2, 4, 17, 341) are retried.
 const TEMPORARY = new Set([1, 2, 4, 17, 341]);
-async function graph(fetchFn, path, { method = 'GET', params = {}, token, sleepFn = sleep, delays = [4000, 12000, 30000] }) {
+export async function graph(fetchFn, path, { method = 'GET', params = {}, token, sleepFn = sleep, delays = [4000, 12000, 30000] }) {
   const base = `https://${HOST}/${VERSION ? `${VERSION}/` : ''}${path}`, body = new URLSearchParams({ ...params, access_token: token });
   for (let attempt = 0; ; attempt++) {
     const res = method === 'GET' ? await fetchFn(`${base}?${body}`) : await fetchFn(base, { method, body });

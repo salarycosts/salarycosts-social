@@ -49,3 +49,11 @@ To refresh: Meta App Dashboard -> Instagram -> **API setup with Instagram login*
 - Keep `posted/` small: delete old folders from `posted/` any time (the log in `posted.json` stays).
 - GitHub switches off scheduled robots in a repo with no activity for 60 days. Every post commit counts as activity, and adding a batch does too.
 - Tests: `npm test` (13 checks: schedule maths, validation, ordering, a fake Instagram, one-email rule).
+
+## Comment replies (second robot)
+`scripts/reply.mjs` answers new comments with one of two friendly templates (edit them in `reply-config.json`; `{user}` becomes the person's @name). It runs from the **reply to comments** workflow.
+- It only answers comments written **after its first run**, once per person per post, never your own comments, and it skips comments with links or promotion words. At most 5 replies per run and 40 per day.
+- **One-time setup:** the Instagram token must include the permission `instagram_business_manage_comments` (Meta App Dashboard, Instagram, API setup with Instagram login, add the permission, generate a new token, update the `IG_ACCESS_TOKEN` secret and the date in `token-created.txt`).
+- Test first: Actions, **reply to comments**, Run workflow, tick **dry run**. It lists the comments it would answer and replies to nothing.
+- Switch on: in `.github/workflows/reply.yml` remove the `#` in front of the `schedule:` and `cron:` lines.
+- Which comments were answered: `replies.json`.

@@ -1,0 +1,8 @@
+{
+  "templates": [
+    "@{user} Thank you for commenting! 🙏 We really appreciate your interest 💜",
+    "@{user} Thanks for stopping by! 😊 We appreciate the support ✨"
+  ],
+  "maxPerRun": 5,
+  "maxPerDay": 40
+}
