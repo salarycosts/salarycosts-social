@@ -16,6 +16,8 @@ export const looksLikeSpam = (text, words = []) => {
   if (/https?:|www\.|\.(com|net|org|io|co|me|ly|xyz|shop|site|online)\b|t\.me|wa\.me|bit\.ly/.test(t)) return true;
   return words.some((w) => t.includes(w.toLowerCase()));
 };
+// A question is left for a human to answer (a thank-you template would look off)
+export const isQuestion = (text) => /[?？؟]/.test(String(text));
 const DEFAULTS = {
   templates: [
     '@{user} Thank you for commenting! 🙏 We really appreciate your interest 💜',
@@ -47,6 +49,7 @@ export async function replyOnce({ root, env = process.env, now = Date.now(), fet
       if (state.replied[c.id]) continue;
       if (c.parent_id || c.username === me) continue; // replies and our own comments
       if (!(parseTime(c.timestamp) > since)) continue; // older than the start of the bot
+      if (isQuestion(c.text ?? '')) { result.skipped++; log(`SKIP (question, answer it yourself) ${c.username}: ${String(c.text).slice(0, 60)}`); continue; }
       if (looksLikeSpam(c.text ?? '', cfg.spamWords)) { result.skipped++; log(`SKIP (spam-like) ${c.username}: ${String(c.text).slice(0, 60)}`); continue; }
       if (Object.values(state.replied).some((r) => r.media === m.id && r.user === c.username) || todo.some((t) => t.media === m.id && t.user === c.username)) { result.skipped++; continue; } // once per person per post
       todo.push({ id: c.id, user: c.username, media: m.id, time: parseTime(c.timestamp) });

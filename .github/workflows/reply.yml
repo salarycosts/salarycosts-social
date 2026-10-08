@@ -1,8 +1,8 @@
 name: reply to comments
 
 on:
-  # schedule:                 # switched on after the token with the comment permission is in place (see README.md)
-  #   - cron: '10,40 * * * *'
+  schedule:
+    - cron: '10,40 * * * *'   # every 30 minutes, offset from the posting robot
   workflow_dispatch:
     inputs:
       dry_run:

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { replyOnce, parseTime, looksLikeSpam } from '../scripts/reply.mjs';
+import { replyOnce, parseTime, looksLikeSpam, isQuestion } from '../scripts/reply.mjs';
 
 // a fake Instagram with two posts and a fixed set of comments; records every reply
 function fakeInstagram(comments, { failReply } = {}) {
@@ -84,4 +84,11 @@ test('a missing comment permission fails the run with a clear message and never 
 test('time parsing and spam check helpers', () => {
   assert.equal(parseTime('2026-10-08T12:00:00+0000'), Date.parse('2026-10-08T12:00:00Z'));
   assert.equal(looksLikeSpam('Nice post!'), false); assert.equal(looksLikeSpam('visit mysite.com'), true); assert.equal(looksLikeSpam('WhatsApp me', ['whatsapp']), true);
+});
+
+test('questions are left for a human; plain thanks and emojis are answered', async () => {
+  const r = root(STARTED), ig = fakeInstagram({ M1: [c('q', 'quinn', 'How much is 60k after tax?'), c('e', 'emma', '🔥🔥'), c('t', 'tom', 'Thanks!')] });
+  const res = await run(r, ig);
+  assert.deepEqual(ig.replies().map((x) => x.path).sort(), ['e/replies', 't/replies']); assert.equal(res.skipped, 1);
+  assert.equal(isQuestion('what?'), true); assert.equal(isQuestion('great'), false);
 });
