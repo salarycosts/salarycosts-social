@@ -8,6 +8,7 @@ import { validateSchedule, dueSlot, nextSlots, listQueue, inspectPost } from './
 
 const HOST = process.env.IG_API_HOST || 'graph.facebook.com', VERSION = process.env.GRAPH_VERSION ?? ''; // empty = no version in the URL, Instagram then uses the app's current default version
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const norm = (t) => String(t ?? '').replace(/\r\n/g, '\n').trim();
 const readJson = (f, fallback) => (existsSync(f) ? JSON.parse(readFileSync(f, 'utf8') || 'null') ?? fallback : fallback);
 const when = (ms, tz) => new Date(ms).toLocaleString('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' });
 
@@ -68,16 +69,31 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
   if (!repo) throw new Error('GITHUB_REPOSITORY is not set (it is set automatically inside GitHub Actions).');
   const urlOf = (f) => `https://raw.githubusercontent.com/${repo}/${branch}/queue/${encodeURIComponent(post.name)}/${encodeURIComponent(f)}`;
 
-  const children = [];
-  for (const f of post.slides) {
-    const { id } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { image_url: urlOf(f), is_carousel_item: 'true' }, token, sleepFn });
-    children.push(id);
+  // Guard against double posts: if Instagram already shows a post with exactly this caption (for example an earlier run published it but then failed
+  // before the log was saved), log that post as done instead of publishing again.
+  const onInstagram = async () => (await graph(fetchFn, `${igId}/media`, { params: { fields: 'id,caption,timestamp', limit: '25' }, token, sleepFn })).data?.find((m) => norm(m.caption) === norm(post.caption));
+  let mediaId = (await onInstagram())?.id;
+  if (mediaId) log(`"${post.name}" is already on Instagram (media ${mediaId}); logging it as posted instead of publishing it again.`);
+  else {
+    try {
+      const children = [];
+      for (const f of post.slides) {
+        const { id } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { image_url: urlOf(f), is_carousel_item: 'true' }, token, sleepFn });
+        children.push(id);
+      }
+      for (const id of children) await waitFinished(fetchFn, id, token, { sleepFn });
+      const { id: container } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: children.join(','), caption: post.caption }, token, sleepFn });
+      await waitFinished(fetchFn, container, token, { sleepFn });
+      await sleepFn(5000); // Instagram can still say "not ready" right after FINISHED; the publish call is also retried
+      mediaId = (await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token, sleepFn })).id;
+    } catch (e) {
+      // the call can fail even though Instagram published the post: look before giving up, so the next run cannot post it a second time
+      await sleepFn(10000);
+      const hit = await onInstagram().catch(() => null);
+      if (!hit) throw e;
+      mediaId = hit.id; log(`The publish call reported an error, but "${post.name}" is on Instagram (media ${mediaId}). Logging it as posted.`);
+    }
   }
-  for (const id of children) await waitFinished(fetchFn, id, token, { sleepFn });
-  const { id: container } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: children.join(','), caption: post.caption }, token, sleepFn });
-  await waitFinished(fetchFn, container, token, { sleepFn });
-  await sleepFn(5000); // Instagram can still say "not ready" right after FINISHED; the publish call is also retried
-  const { id: mediaId } = await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token, sleepFn });
 
   // only after Instagram confirmed: move the folder and write the log
   mkdirSync(join(root, 'posted'), { recursive: true });

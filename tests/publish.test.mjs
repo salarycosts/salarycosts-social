@@ -13,7 +13,7 @@ function fakeInstagram({ failOn } = {}) {
     calls.push({ method: init.method ?? 'GET', path, body });
     if (failOn && path.includes(failOn)) return { ok: false, status: 400, json: async () => ({ error: { message: 'boom', code: 100 } }) };
     if (path.endsWith('/media_publish')) return { ok: true, status: 200, json: async () => ({ id: 'MEDIA1' }) };
-    if (path.endsWith('/media')) return { ok: true, status: 200, json: async () => ({ id: `C${++n}` }) };
+    if (path.endsWith('/media')) return { ok: true, status: 200, json: async () => (init.method === 'POST' ? { id: `C${++n}` } : { data: [] }) }; // GET = the "already on Instagram?" lookup
     return { ok: true, status: 200, json: async () => ({ status_code: 'FINISHED' }) };
   };
   return { fetchFn, calls };
@@ -113,4 +113,31 @@ test('retries "media is not ready for publishing" (code 9007) and then publishes
   };
   const r = await runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} });
   assert.equal(r.posted, true); assert.equal(tries, 3);
+});
+
+test('does not post twice: a post already on Instagram with the same caption is logged, not published again', async () => {
+  const root = makeRoot(); addPost(root, '01-first', { slides: 2, caption: 'Same caption #a' });
+  const ig = fakeInstagram();
+  const fetchFn = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/media') && !init?.method) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'EXISTING', caption: 'Same caption #a' }] }) };
+    return ig.fetchFn(url, init);
+  };
+  const r = await runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} });
+  assert.equal(r.posted, true); assert.equal(r.mediaId, 'EXISTING');
+  assert.equal(ig.calls.filter((c) => c.method === 'POST').length, 0); // nothing was created or published
+  assert.ok(existsSync(join(root, 'posted', '01-first')));
+});
+
+test('if the publish call errors but the post is on Instagram afterwards, it is logged (no repeat next run)', async () => {
+  const root = makeRoot(); addPost(root, '01-first', { slides: 2, caption: 'Late caption #b' });
+  const ig = fakeInstagram(); let published = false;
+  const fetchFn = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/media_publish')) { published = true; return { ok: false, status: 400, json: async () => ({ error: { message: 'Something went wrong', code: 100 } }) }; }
+    if (u.pathname.endsWith('/media') && !init?.method) return { ok: true, status: 200, json: async () => ({ data: published ? [{ id: 'LATE', caption: 'Late caption #b' }] : [] }) };
+    return ig.fetchFn(url, init);
+  };
+  const r = await runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} });
+  assert.equal(r.posted, true); assert.equal(r.mediaId, 'LATE'); assert.ok(existsSync(join(root, 'posted', '01-first')));
 });
