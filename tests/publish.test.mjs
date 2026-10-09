@@ -56,11 +56,11 @@ test('an API failure leaves the folder in the queue and the log untouched (nothi
   await assert.rejects(() => go(root, NOON, fakeInstagram({ failOn: 'media_publish' })), /boom/);
   assert.ok(existsSync(join(root, 'queue', '01-a'))); assert.equal(JSON.parse(readFileSync(join(root, 'posted.json'), 'utf8')).length, 0);
 });
-test('dry run and "no slot due" make no API calls', async () => {
+test('dry run and "no slot due" never create or publish anything', async () => {
   const root = makeRoot(); addPost(root, '01-a'); const ig = fakeInstagram();
   assert.equal((await go(root, NOON, ig, { ...ENV, DRY_RUN: '1' })).would, '01-a');
   assert.equal((await go(root, Date.parse('2026-10-06T14:30:00Z'), ig)).posted, false); // 16:30 Berlin, no slot due
-  assert.equal(ig.calls.length, 0);
+  assert.ok(ig.calls.every((c) => c.method === "GET"), "a dry run only reads"); // nothing is created or published
 });
 test('exactly ONE notice: only when the last post has gone out; an empty queue afterwards is silent (no repeated emails)', async () => {
   const root = makeRoot(); addPost(root, '01-a'); addPost(root, '02-b'); const ig = fakeInstagram();

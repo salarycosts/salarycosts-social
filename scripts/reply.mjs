@@ -52,7 +52,7 @@ export async function replyOnce({ root, env = process.env, now = Date.now(), fet
       if (!(parseTime(c.timestamp) > since)) { old++; continue; } // older than the start of the bot
       if (isQuestion(c.text ?? '')) { result.skipped++; log(`SKIP (question, answer it yourself) ${c.username}: ${String(c.text).slice(0, 60)}`); continue; }
       if (looksLikeSpam(c.text ?? '', cfg.spamWords)) { result.skipped++; log(`SKIP (spam-like) ${c.username}: ${String(c.text).slice(0, 60)}`); continue; }
-      if (Object.values(state.replied).some((r) => r.media === m.id && r.user === c.username) || todo.some((t) => t.media === m.id && t.user === c.username)) { result.skipped++; continue; } // once per person per post
+      if (Object.values(state.replied).some((r) => r.media === m.id && c.username && r.user === c.username) || todo.some((t) => c.username && t.media === m.id && t.user === c.username)) { result.skipped++; continue; } // once per person per post
       todo.push({ id: c.id, user: c.username, media: m.id, time: parseTime(c.timestamp) });
     }
   }
@@ -62,7 +62,7 @@ export async function replyOnce({ root, env = process.env, now = Date.now(), fet
 
   for (const c of todo) {
     if (budget <= 0) { log('Limit reached; the rest waits for the next run.'); break; }
-    const n = Object.keys(state.replied).length, message = cfg.templates[n % cfg.templates.length].replaceAll('{user}', c.user);
+    const n = Object.keys(state.replied).length, message = cfg.templates[n % cfg.templates.length].replaceAll('@{user} ', c.user ? `@${c.user} ` : '').replaceAll('{user}', c.user ?? '');
     if (dry) { log(`DRY RUN: would reply to ${c.user}: ${message}`); budget--; continue; }
     try {
       await g(`${c.id}/replies`, { message }, 'POST');

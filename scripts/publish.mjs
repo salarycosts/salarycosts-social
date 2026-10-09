@@ -62,7 +62,15 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
   post.slides.forEach((f, i) => log(`  slide ${i + 1}: ${f}`));
   log(`  caption: ${post.caption.split('\n')[0].slice(0, 80)}${post.caption.length > 80 ? '...' : ''}`);
   post.warnings.forEach((w) => log(`  warning: ${w}`));
-  if (dry) { result.would = post.name; return result; }
+  if (dry) {
+    result.would = post.name;
+    if (env.IG_ACCESS_TOKEN) { // read-only: shows whether the real run would log it as already posted instead of publishing
+      const hit = await graph(fetchFn, `${env.IG_USER_ID || 'me'}/media`, { params: { fields: 'id,caption', limit: '25' }, token: env.IG_ACCESS_TOKEN, sleepFn }).then((r) => r.data?.find((m) => norm(m.caption) === norm(post.caption))).catch((e) => { log(`(could not check Instagram: ${e.message})`); return null; });
+      log(hit ? `CHECK: "${post.name}" is ALREADY on Instagram (media ${hit.id}); a real run would only log it, not post it again.` : `CHECK: "${post.name}" is not on Instagram yet; a real run would publish it.`);
+      result.alreadyOnInstagram = !!hit;
+    }
+    return result;
+  }
 
   const token = env.IG_ACCESS_TOKEN, igId = env.IG_USER_ID || 'me', repo = env.GITHUB_REPOSITORY, branch = env.BRANCH || 'main';
   if (!token) throw new Error('IG_ACCESS_TOKEN must be set as a repository secret (see README.md). IG_USER_ID is optional; "me" is used when it is not set.');
