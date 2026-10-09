@@ -42,13 +42,14 @@ export async function replyOnce({ root, env = process.env, now = Date.now(), fet
   let budget = Math.min(cfg.maxPerRun, cfg.maxPerDay - doneToday);
   if (fresh) log(`First run: only comments written after ${state.startedAt} will be answered.`);
 
-  const todo = [];
+  const todo = []; let seen = 0, old = 0;
   for (const m of media) {
     const list = (await g(`${m.id}/comments`, { fields: 'id,text,username,timestamp,parent_id', limit: '50' })).data ?? [];
+    seen += list.length;
     for (const c of list) {
       if (state.replied[c.id]) continue;
       if (c.parent_id || c.username === me) continue; // replies and our own comments
-      if (!(parseTime(c.timestamp) > since)) continue; // older than the start of the bot
+      if (!(parseTime(c.timestamp) > since)) { old++; continue; } // older than the start of the bot
       if (isQuestion(c.text ?? '')) { result.skipped++; log(`SKIP (question, answer it yourself) ${c.username}: ${String(c.text).slice(0, 60)}`); continue; }
       if (looksLikeSpam(c.text ?? '', cfg.spamWords)) { result.skipped++; log(`SKIP (spam-like) ${c.username}: ${String(c.text).slice(0, 60)}`); continue; }
       if (Object.values(state.replied).some((r) => r.media === m.id && r.user === c.username) || todo.some((t) => t.media === m.id && t.user === c.username)) { result.skipped++; continue; } // once per person per post
@@ -56,6 +57,7 @@ export async function replyOnce({ root, env = process.env, now = Date.now(), fet
     }
   }
   todo.sort((a, b) => a.time - b.time);
+  log(`Looked at ${media.length} post(s): ${seen} comment(s) found, ${old} older than the start of the bot.`);
   log(`${todo.length} comment(s) to answer, budget ${Math.max(budget, 0)} this run (${doneToday} answered in the last 24 hours).`);
 
   for (const c of todo) {
