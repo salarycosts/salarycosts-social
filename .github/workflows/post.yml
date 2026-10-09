@@ -1,8 +1,9 @@
 name: post to Instagram
 
 on:
-  schedule:
-    - cron: '*/30 * * * *'   # checks every 30 minutes whether a posting slot is due (times are set in schedule.json)
+  # PAUSED while duplicate posts are investigated (remove the # signs to switch the schedule back on)
+  # schedule:
+  #   - cron: '*/30 * * * *'   # checks every 30 minutes whether a posting slot is due (times are set in schedule.json)
   workflow_dispatch:
     inputs:
       force:
