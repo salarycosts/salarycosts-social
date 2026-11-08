@@ -101,8 +101,9 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
       mediaId = (await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token, sleepFn })).id;
     } catch (e) {
       // the call can fail even though Instagram published the post: look before giving up, so the next run cannot post it a second time
-      await sleepFn(10000);
-      const hit = await onInstagram().catch(() => null);
+      // Instagram answers "Generic Internal Error" (code -1, subcode 2207085) on media_publish and still publishes, but the post can take a while to appear in the media list: look up to 4 times over about 90 seconds
+      let hit = null;
+      for (const wait of [10000, 20000, 30000, 30000]) { await sleepFn(wait); hit = await onInstagram().catch(() => null); if (hit) break; }
       if (!hit) {
         // The publish call was sent, so Instagram may have published it even though we cannot see it yet. Never retry blindly: park the folder so the next run cannot post it again.
         if (publishSent) {
