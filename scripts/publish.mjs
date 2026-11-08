@@ -9,6 +9,9 @@ import { validateSchedule, dueSlot, nextSlots, listQueue, inspectPost } from './
 const HOST = process.env.IG_API_HOST || 'graph.facebook.com', VERSION = process.env.GRAPH_VERSION ?? ''; // empty = no version in the URL, Instagram then uses the app's current default version
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const norm = (t) => String(t ?? '').replace(/\r\n/g, '\n').trim();
+// Instagram can return a caption slightly changed (spacing, line breaks, hashtags, emoji), so compare only letters and digits, and accept a match on the first 80 of them.
+const flat = (t) => norm(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+export const sameCaption = (a, b) => { const x = flat(a), y = flat(b); return x.length > 0 && y.length > 0 && (x === y || x.slice(0, 80) === y.slice(0, 80)); };
 const readJson = (f, fallback) => (existsSync(f) ? JSON.parse(readFileSync(f, 'utf8') || 'null') ?? fallback : fallback);
 const when = (ms, tz) => new Date(ms).toLocaleString('en-GB', { timeZone: tz, dateStyle: 'medium', timeStyle: 'short' });
 
@@ -65,7 +68,7 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
   if (dry) {
     result.would = post.name;
     if (env.IG_ACCESS_TOKEN) { // read-only: shows whether the real run would log it as already posted instead of publishing
-      const hit = await graph(fetchFn, `${env.IG_USER_ID || 'me'}/media`, { params: { fields: 'id,caption', limit: '25' }, token: env.IG_ACCESS_TOKEN, sleepFn }).then((r) => r.data?.find((m) => norm(m.caption) === norm(post.caption))).catch((e) => { log(`(could not check Instagram: ${e.message})`); return null; });
+      const hit = await graph(fetchFn, `${env.IG_USER_ID || 'me'}/media`, { params: { fields: 'id,caption', limit: '25' }, token: env.IG_ACCESS_TOKEN, sleepFn }).then((r) => r.data?.find((m) => sameCaption(m.caption, post.caption))).catch((e) => { log(`(could not check Instagram: ${e.message})`); return null; });
       log(hit ? `CHECK: "${post.name}" is ALREADY on Instagram (media ${hit.id}); a real run would only log it, not post it again.` : `CHECK: "${post.name}" is not on Instagram yet; a real run would publish it.`);
       result.alreadyOnInstagram = !!hit;
     }
@@ -79,10 +82,11 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
 
   // Guard against double posts: if Instagram already shows a post with exactly this caption (for example an earlier run published it but then failed
   // before the log was saved), log that post as done instead of publishing again.
-  const onInstagram = async () => (await graph(fetchFn, `${igId}/media`, { params: { fields: 'id,caption,timestamp', limit: '25' }, token, sleepFn })).data?.find((m) => norm(m.caption) === norm(post.caption));
+  const onInstagram = async () => (await graph(fetchFn, `${igId}/media`, { params: { fields: 'id,caption,timestamp', limit: '25' }, token, sleepFn })).data?.find((m) => sameCaption(m.caption, post.caption));
   let mediaId = (await onInstagram())?.id;
   if (mediaId) log(`"${post.name}" is already on Instagram (media ${mediaId}); logging it as posted instead of publishing it again.`);
   else {
+    let publishSent = false;
     try {
       const children = [];
       for (const f of post.slides) {
@@ -93,12 +97,24 @@ export async function runOnce({ root, env = process.env, now = Date.now(), fetch
       const { id: container } = await graph(fetchFn, `${igId}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: children.join(','), caption: post.caption }, token, sleepFn });
       await waitFinished(fetchFn, container, token, { sleepFn });
       await sleepFn(5000); // Instagram can still say "not ready" right after FINISHED; the publish call is also retried
+      publishSent = true;
       mediaId = (await graph(fetchFn, `${igId}/media_publish`, { method: 'POST', params: { creation_id: container }, token, sleepFn })).id;
     } catch (e) {
       // the call can fail even though Instagram published the post: look before giving up, so the next run cannot post it a second time
       await sleepFn(10000);
       const hit = await onInstagram().catch(() => null);
-      if (!hit) throw e;
+      if (!hit) {
+        // The publish call was sent, so Instagram may have published it even though we cannot see it yet. Never retry blindly: park the folder so the next run cannot post it again.
+        if (publishSent) {
+          mkdirSync(join(root, 'needs-check'), { recursive: true });
+          renameSync(join(queueDir, post.name), join(root, 'needs-check', post.name));
+          writeFileSync(join(root, 'notify.md'), `Check Instagram: "${post.name}" may have been published
+The publish call for "${post.name}" failed (${e.message}). It was moved to needs-check/ so it is not posted again. Look at the Instagram profile: if the post is there, move the folder from needs-check/ to posted/ and add it to posted.json; if it is not there, move it back to queue/.
+`);
+          log(`Publish failed after the request was sent; "${post.name}" parked in needs-check/ to avoid a duplicate.`);
+        }
+        throw e;
+      }
       mediaId = hit.id; log(`The publish call reported an error, but "${post.name}" is on Instagram (media ${mediaId}). Logging it as posted.`);
     }
   }

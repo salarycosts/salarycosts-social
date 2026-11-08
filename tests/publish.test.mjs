@@ -51,10 +51,13 @@ test('a broken folder is skipped, reported, and the next valid one still posts',
   const r = await go(root, NOON, fakeInstagram());
   assert.equal(r.folder, '02-ok'); assert.match(r.problems.join(), /01-broken/); assert.ok(existsSync(join(root, 'queue', '01-broken')));
 });
-test('an API failure leaves the folder in the queue and the log untouched (nothing lost, nothing double-posted)', async () => {
+test('a failure BEFORE the publish call leaves the folder in the queue to retry; a failure AFTER it parks the folder (never a double post)', async () => {
   const root = makeRoot(); addPost(root, '01-a');
-  await assert.rejects(() => go(root, NOON, fakeInstagram({ failOn: 'media_publish' })), /boom/);
+  await assert.rejects(() => go(root, NOON, fakeInstagram({ failOn: 'media' })), /boom/);
   assert.ok(existsSync(join(root, 'queue', '01-a'))); assert.equal(JSON.parse(readFileSync(join(root, 'posted.json'), 'utf8')).length, 0);
+  const root2 = makeRoot(); addPost(root2, '01-a');
+  await assert.rejects(() => go(root2, NOON, fakeInstagram({ failOn: 'media_publish' })), /boom/);
+  assert.ok(!existsSync(join(root2, 'queue', '01-a')) && existsSync(join(root2, 'needs-check', '01-a'))); assert.equal(JSON.parse(readFileSync(join(root2, 'posted.json'), 'utf8')).length, 0);
 });
 test('dry run and "no slot due" never create or publish anything', async () => {
   const root = makeRoot(); addPost(root, '01-a'); const ig = fakeInstagram();
@@ -140,4 +143,30 @@ test('if the publish call errors but the post is on Instagram afterwards, it is 
   };
   const r = await runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} });
   assert.equal(r.posted, true); assert.equal(r.mediaId, 'LATE'); assert.ok(existsSync(join(root, 'posted', '01-first')));
+});
+
+test('a caption that Instagram returned slightly changed still counts as already posted', async () => {
+  const root = makeRoot(); addPost(root, '01-first', { slides: 2, caption: 'What a kr 500,000 salary leaves you in Denmark\n\n#tax #denmark' });
+  const ig = fakeInstagram();
+  const fetchFn = async (url, init) => {
+    const u = new URL(url);
+    if (u.pathname.endsWith('/media') && !init?.method) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'SEEN', caption: 'What a kr 500,000 salary leaves you in Denmark #tax  #denmark ' }] }) };
+    return ig.fetchFn(url, init);
+  };
+  const r = await runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} });
+  assert.equal(r.mediaId, 'SEEN'); assert.equal(ig.calls.filter((c) => c.method === 'POST').length, 0);
+});
+
+test('if the publish call fails and the post cannot be seen, the folder is parked so the next run cannot post it again', async () => {
+  const root = makeRoot(); addPost(root, '01-first', { slides: 2, caption: 'Parked caption #c' });
+  const ig = fakeInstagram();
+  const fetchFn = async (url, init) => {
+    if (new URL(url).pathname.endsWith('/media_publish')) return { ok: false, status: 400, json: async () => ({ error: { message: 'Something went wrong', code: 100 } }) };
+    return ig.fetchFn(url, init);
+  };
+  await assert.rejects(() => runOnce({ root, env: ENV, now: NOON, fetchFn, log, sleepFn: async () => {} }), /Something went wrong/);
+  assert.ok(!existsSync(join(root, 'queue', '01-first')) && existsSync(join(root, 'needs-check', '01-first')));
+  assert.ok(existsSync(join(root, 'notify.md')));
+  const second = await runOnce({ root, env: ENV, now: NOON + 3600000, fetchFn: ig.fetchFn, log, sleepFn: async () => {} });
+  assert.equal(second.posted, false);
 });
